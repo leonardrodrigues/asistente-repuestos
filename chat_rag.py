@@ -123,21 +123,36 @@ if api_key:
             # 3. Respuesta de la IA
             llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
             
+            # --- NUEVA LÓGICA DE MEMORIA ---
+            # Extraemos los últimos 4 mensajes (para no gastar tokens infinitamente)
+            historial_texto = ""
+            ultimos_mensajes = st.session_state.mensajes[-4:] 
+            for m in ultimos_mensajes:
+                rol = "Cliente" if m["rol"] == "user" else "Asistente"
+                historial_texto += f"{rol}: {m['contenido']}\n"
+            # -------------------------------
+            
             prompt = f"""Eres un experto en repuestos de una tienda física. Tienes dos fuentes de datos:
             
-            FUENTE 1: INVENTARIO FÍSICO (CSV) -> Aquí están los precios y existencias reales.
+            FUENTE 1: INVENTARIO FÍSICO (CSV)
             {info_csv}
             
-            FUENTE 2: CATÁLOGO TÉCNICO (PDF) -> Aquí están las especificaciones de bujías y compatibilidades.
+            FUENTE 2: CATÁLOGO TÉCNICO (PDF)
             {info_pdf}
             
-            REGLAS CRÍTICAS:
-            1. Si el cliente pregunta por un año (ej: 98), busca en los rangos (ej: 93-98 incluye al 98).
-            2. Si hay datos en el INVENTARIO, dáselos (Marca, Código, Existencia).
-            3. Si el cliente pide bujías y no están en el inventario, revisa el CATÁLOGO TÉCNICO para dar el código NGK.
-            4. Si NO encuentras el repuesto en ninguna de las dos fuentes, di que no hay stock.
+            HISTORIAL RECIENTE DE LA CONVERSACIÓN:
+            {historial_texto}
             
-            Pregunta del cliente: {pregunta}"""
+            REGLAS CRÍTICAS:
+            1. Usa el HISTORIAL para entender el contexto si el cliente hace preguntas cortas como "¿y cuánto cuesta?" o "¿tienes de otra marca?".
+            2. Si el cliente pregunta por un año (ej: 98), busca en los rangos (ej: 93-98 incluye al 98).
+            3. Si hay datos en el INVENTARIO, presenta la información de la siguiente manera: 
+               - El título del repuesto y su aplicación en negrita.
+               - Justo debajo, una tabla Markdown con las columnas exactas: Código, Marca y Existencia (en ese orden).
+            4. Si el cliente pide bujías y no están en el inventario, revisa el CATÁLOGO TÉCNICO para dar el código NGK.
+            5. Si NO encuentras el repuesto en ninguna de las dos fuentes, di que no hay stock de forma amable.
+            
+            Nueva pregunta del cliente: {pregunta}"""
             
             with st.spinner("Buscando..."):
                 res = llm.invoke(prompt)
