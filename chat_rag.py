@@ -18,7 +18,20 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 st.set_page_config(page_title="Asistente de Repuestos Pro", page_icon="⚙️")
 st.title("⚙️ Sistema Inteligente de Repuestos")
 
-api_key = st.sidebar.text_input("🔑 API Key de Gemini:", type="password")
+# --- CONFIGURACIÓN DE API KEY (INTELIGENTE) ---
+# 1. Intentamos buscar en los Secrets de Streamlit Cloud
+api_key = st.secrets.get("GOOGLE_API_KEY")
+
+# 2. Si NO está en Secrets, mostramos el cuadro en el sidebar
+if not api_key:
+    api_key = st.sidebar.text_input("🔑 API Key de Gemini:", type="password")
+    if not api_key:
+        st.info("👈 Por favor, ingresa tu API Key para continuar.")
+        st.stop() # Detiene la app hasta que haya una clave
+else:
+    # Opcional: Mostrar un mensaje discreto de que se está usando la clave configurada
+    st.sidebar.success("✅ API Key cargada desde Secrets")
+    
 PERSIST_DIRECTORY = "db_catalogo_solo"
 
 # --- 1. FUNCIÓN DE BÚSQUEDA EN INVENTARIO (MEJORADA) ---
