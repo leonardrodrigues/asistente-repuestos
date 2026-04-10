@@ -30,6 +30,20 @@ if not api_key:
 else:
     st.sidebar.success("✅ API Key cargada desde Secrets")
 
+# --- PANEL SECRETO PARA EL DUEÑO ---
+with st.sidebar.expander("📦 Ver Pedidos Pendientes"):
+    if os.path.exists("pedidos_pendientes.txt"):
+        with open("pedidos_pendientes.txt", "r", encoding="utf-8") as f:
+            contenido = f.read()
+            st.text(contenido)
+            
+        # Un botón para limpiar la lista si ya se compraron
+        if st.button("Borrar lista de pedidos"):
+            os.remove("pedidos_pendientes.txt")
+            st.rerun()
+    else:
+        st.info("Aún no hay piezas faltantes registradas.")
+
 PERSIST_DIRECTORY = "db_catalogo_solo"
 
 # --- HERRAMIENTAS DEL AGENTE (Nivel 3) ---
