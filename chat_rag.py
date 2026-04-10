@@ -121,7 +121,8 @@ if api_key:
                 info_pdf = "\n".join([d.page_content for d in docs])
 
             # 3. Respuesta de la IA
-            llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+            llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0,
+                max_retries=5)
             
             # --- NUEVA LÓGICA DE MEMORIA ---
             # Extraemos los últimos 4 mensajes (para no gastar tokens infinitamente)
