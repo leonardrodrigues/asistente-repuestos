@@ -157,9 +157,25 @@ if api_key:
             
             with st.spinner("Buscando..."):
                 res = llm.invoke(prompt)
-                st.chat_message("assistant").markdown(res.content)
+                
+                # --- NUEVA LÓGICA PARA LEER RESPUESTAS DE AGENTES ---
+                texto_final = ""
+                # Si la IA devuelve texto normal (modelos viejos)
+                if isinstance(res.content, str):
+                    texto_final = res.content
+                # Si la IA devuelve bloques complejos (Agentes nuevos)
+                elif isinstance(res.content, list):
+                    for bloque in res.content:
+                        if isinstance(bloque, dict) and "text" in bloque:
+                            texto_final += bloque["text"]
+                # ----------------------------------------------------
+
+                # Mostramos la respuesta limpia en pantalla
+                st.chat_message("assistant").markdown(texto_final)
+                
+                # Guardamos en el historial
                 st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
-                st.session_state.mensajes.append({"rol": "assistant", "contenido": res.content})
+                st.session_state.mensajes.append({"rol": "assistant", "contenido": texto_final})
                 
     except Exception as e:
         st.error(f"Error: {e}")
