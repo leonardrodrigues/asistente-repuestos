@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import time
 import re
+from langchain_core.tools import tool
+from datetime import datetime
 
 # --- TRUCO PARA CHROMA EN STREAMLIT CLOUD ---
 __import__('pysqlite3')
@@ -19,22 +21,33 @@ st.set_page_config(page_title="Asistente de Repuestos Pro", page_icon="⚙️")
 st.title("⚙️ Sistema Inteligente de Repuestos")
 
 # --- CONFIGURACIÓN DE API KEY (INTELIGENTE) ---
-# 1. Intentamos buscar en los Secrets de Streamlit Cloud
 api_key = st.secrets.get("GOOGLE_API_KEY")
-
-# 2. Si NO está en Secrets, mostramos el cuadro en el sidebar
 if not api_key:
     api_key = st.sidebar.text_input("🔑 API Key de Gemini:", type="password")
     if not api_key:
         st.info("👈 Por favor, ingresa tu API Key para continuar.")
-        st.stop() # Detiene la app hasta que haya una clave
+        st.stop()
 else:
-    # Opcional: Mostrar un mensaje discreto de que se está usando la clave configurada
     st.sidebar.success("✅ API Key cargada desde Secrets")
-    
+
 PERSIST_DIRECTORY = "db_catalogo_solo"
 
-# --- 1. FUNCIÓN DE BÚSQUEDA EN INVENTARIO (MEJORADA) ---
+# --- HERRAMIENTAS DEL AGENTE (Nivel 3) ---
+@tool
+def registrar_pieza_faltante(pieza: str, vehiculo: str) -> str:
+    """
+    Útil EXCLUSIVAMENTE cuando el cliente busca un repuesto que NO está en el inventario.
+    Guarda la solicitud en la lista de pedidos pendientes para el dueño del negocio.
+    """
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open("pedidos_pendientes.txt", "a", encoding="utf-8") as f:
+        f.write(f"[{fecha}] Solicitado: {pieza} - Para: {vehiculo}\n")
+    return f"REGISTRO EXITOSO: La pieza '{pieza}' para '{vehiculo}' ha sido anotada para el proveedor."
+
+# Lista de herramientas disponibles
+lista_herramientas = [registrar_pieza_faltante]
+
+# --- FUNCIONES DE DATOS ---
 @st.cache_data
 def cargar_inventario():
     if os.path.exists("inventario.csv"):
@@ -47,28 +60,20 @@ def cargar_inventario():
     return None
 
 def buscar_en_csv(df, query):
-    # Limpiamos la consulta de palabras vacías
     ignore = ["para", "de", "el", "la", "un", "una", "del", "año", "años"]
     palabras = [p.lower() for p in re.findall(r'\w+', query) if p.lower() not in ignore]
-    
     if not palabras: return ""
-
-    # LÓGICA "AND": Buscamos filas que contengan TODAS las palabras clave
     resultado = df.copy()
     for p in palabras:
         mask = resultado.astype(str).apply(lambda x: x.str.contains(p, case=False, na=False)).any(axis=1)
         resultado = resultado[mask]
-    
-    # Si el AND es muy estricto y no sale nada, intentamos con las palabras más largas (marcas/modelos)
     if resultado.empty:
         importantes = [p for p in palabras if len(p) > 3]
         if importantes:
             mask = df.astype(str).apply(lambda x: x.str.contains('|'.join(importantes), case=False, na=False)).any(axis=1)
             resultado = df[mask]
-
     return resultado.head(15).to_string(index=False)
 
-# --- 2. PREPARAR CATÁLOGO PDF ---
 @st.cache_resource(show_spinner=False)
 def preparar_catalogo(api_key):
     os.environ["GOOGLE_API_KEY"] = api_key
@@ -78,11 +83,9 @@ def preparar_catalogo(api_key):
     if os.path.exists("catalogo.pdf"):
         loader = PyPDFLoader("catalogo.pdf")
         docs = loader.load()
-        # Chunks específicos para tablas de catálogos
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
         split_docs = text_splitter.split_documents(docs)
         vectorstore = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings)
-        # Carga lenta para evitar Error 429
         bar = st.progress(0, text="Cargando catálogo técnico...")
         for i, d in enumerate(split_docs):
             vectorstore.add_documents([d])
@@ -92,92 +95,74 @@ def preparar_catalogo(api_key):
         return vectorstore
     return None
 
-# --- INTERFAZ Y LÓGICA ---
+# --- LÓGICA PRINCIPAL ---
 inventario = cargar_inventario()
 
 if api_key:
     try:
         base_datos = preparar_catalogo(api_key)
-        
-        if "mensajes" not in st.session_state:
-            st.session_state.mensajes = []
-            
+        if "mensajes" not in st.session_state: st.session_state.mensajes = []
         for msg in st.session_state.mensajes:
-            with st.chat_message(msg["rol"]):
-                st.markdown(msg["contenido"])
+            with st.chat_message(msg["rol"]): st.markdown(msg["contenido"])
 
         pregunta = st.chat_input("¿Qué repuesto buscas?")
         
         if pregunta:
             st.chat_message("user").markdown(pregunta)
             
-            # 1. Buscar en CSV (Stock)
+            # 1. Búsquedas previas
             info_csv = buscar_en_csv(inventario, pregunta) if inventario is not None else ""
-            
-            # 2. Buscar en PDF (Técnico)
             info_pdf = ""
             if base_datos:
                 docs = base_datos.similarity_search(pregunta, k=3)
                 info_pdf = "\n".join([d.page_content for d in docs])
 
-            # 3. Respuesta de la IA
-            llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0,
-                max_retries=5)
-            
-            # --- NUEVA LÓGICA DE MEMORIA ---
-            # Extraemos los últimos 4 mensajes (para no gastar tokens infinitamente)
+            # 2. Configurar el Agente
+            llm_base = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0, max_retries=3)
+            # ATENCIÓN: Aquí atamos las herramientas
+            llm_con_herramientas = llm_base.bind_tools(lista_herramientas)
+
+            # 3. Preparar historial
             historial_texto = ""
-            ultimos_mensajes = st.session_state.mensajes[-4:] 
-            for m in ultimos_mensajes:
+            for m in st.session_state.mensajes[-4:]:
                 rol = "Cliente" if m["rol"] == "user" else "Asistente"
                 historial_texto += f"{rol}: {m['contenido']}\n"
-            # -------------------------------
-            
-            prompt = f"""Eres un experto en repuestos de una tienda física. Tienes dos fuentes de datos:
-            
-            FUENTE 1: INVENTARIO FÍSICO (CSV)
-            {info_csv}
-            
-            FUENTE 2: CATÁLOGO TÉCNICO (PDF)
-            {info_pdf}
-            
-            HISTORIAL RECIENTE DE LA CONVERSACIÓN:
-            {historial_texto}
-            
-            REGLAS CRÍTICAS:
-            1. Usa el HISTORIAL para entender el contexto si el cliente hace preguntas cortas como "¿y cuánto cuesta?" o "¿tienes de otra marca?".
-            2. Si el cliente pregunta por un año (ej: 98), busca en los rangos (ej: 93-98 incluye al 98).
-            3. Si hay datos en el INVENTARIO, presenta la información de la siguiente manera: 
-               - El título del repuesto y su aplicación en negrita.
-               - Justo debajo, una tabla Markdown con las columnas exactas: Código, Marca y Existencia (en ese orden).
-            4. Si el cliente pide bujías y no están en el inventario, revisa el CATÁLOGO TÉCNICO para dar el código NGK.
-            5. Si NO encuentras el repuesto en ninguna de las dos fuentes, di que no hay stock de forma amable.
-            
-            Nueva pregunta del cliente: {pregunta}"""
-            
-            with st.spinner("Buscando..."):
-                res = llm.invoke(prompt)
-                
-                # --- NUEVA LÓGICA PARA LEER RESPUESTAS DE AGENTES ---
-                texto_final = ""
-                # Si la IA devuelve texto normal (modelos viejos)
-                if isinstance(res.content, str):
-                    texto_final = res.content
-                # Si la IA devuelve bloques complejos (Agentes nuevos)
-                elif isinstance(res.content, list):
-                    for bloque in res.content:
-                        if isinstance(bloque, dict) and "text" in bloque:
-                            texto_final += bloque["text"]
-                # ----------------------------------------------------
 
-                # Mostramos la respuesta limpia en pantalla
-                st.chat_message("assistant").markdown(texto_final)
+            prompt = f"""Eres un experto en repuestos. 
+            STOCK ACTUAL: {info_csv}
+            DATOS TÉCNICOS: {info_pdf}
+            HISTORIAL: {historial_texto}
+
+            REGLAS:
+            1. Si NO hay stock en el inventario ni en el catálogo, utiliza la herramienta 'registrar_pieza_faltante'.
+            2. Presenta resultados en tablas Markdown.
+            Pregunta: {pregunta}"""
+
+            with st.spinner("Procesando..."):
+                # La IA decide si usar herramienta o solo hablar
+                res = llm_con_herramientas.invoke(prompt)
                 
-                # Guardamos en el historial
+                # --- LÓGICA DE EJECUCIÓN DE HERRAMIENTAS ---
+                respuesta_final = ""
+                
+                # ¿La IA quiere llamar a una herramienta?
+                if res.tool_calls:
+                    for call in res.tool_calls:
+                        if call["name"] == "registrar_pieza_faltante":
+                            # Ejecutamos la función real de Python
+                            resultado_tool = registrar_pieza_faltante.invoke(call["args"])
+                            respuesta_final = f"Lo siento, no tenemos ese repuesto. Pero no te preocupes: {resultado_tool}"
+                else:
+                    # Si no usa herramientas, sacamos el texto normal
+                    if isinstance(res.content, str):
+                        respuesta_final = res.content
+                    elif isinstance(res.content, list):
+                        for b in res.content:
+                            if isinstance(b, dict) and "text" in b: respuesta_final += b["text"]
+
+                st.chat_message("assistant").markdown(respuesta_final)
                 st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
-                st.session_state.mensajes.append({"rol": "assistant", "contenido": texto_final})
-                
+                st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta_final})
+
     except Exception as e:
         st.error(f"Error: {e}")
-else:
-    st.info("👈 Ingresa tu API Key.")
