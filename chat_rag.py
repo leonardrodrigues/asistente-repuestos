@@ -164,43 +164,52 @@ if api_key:
             5. PIEZAS FALTANTES: Si una pieza de la lista no aparece en la BD, usa la herramienta 'registrar_pieza_faltante' para esa pieza específica. Luego, añádela a la tabla poniendo "0" en existencia y "No disponible" en Código/Marca.
             """
 
-            with st.spinner("Procesando consulta en Base de Datos..."):
+            with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
                 mensajes_conversacion = [
                     SystemMessage(content=instrucciones),
                     HumanMessage(content=pregunta)
                 ]
                 
+                def limpiar_texto_agente(contenido):
+                    if not contenido: return ""
+                    if isinstance(contenido, str): return contenido
+                    if isinstance(contenido, list):
+                        return "".join([b.get("text", "") for b in contenido if isinstance(b, dict)])
+                    return str(contenido)
+
+                # --- NUEVO 3: EL VERDADERO BUCLE DEL AGENTE (WHILE) ---
                 respuesta_ia = llm_con_herramientas.invoke(mensajes_conversacion)
                 mensajes_conversacion.append(respuesta_ia)
                 
-                # --- NUEVO 3: FUNCIÓN DE LIMPIEZA UNIVERSAL ---
-                def limpiar_texto_agente(contenido):
-                    if isinstance(contenido, str): return contenido
-                    if isinstance(contenido, list):
-                        return "".join([b["text"] for b in contenido if isinstance(b, dict) and "text" in b])
-                    return str(contenido)
-                # ----------------------------------------------
-
-                if respuesta_ia.tool_calls:
+                # Le damos a la IA un máximo de 5 "turnos" seguidos para que no se quede pensando para siempre
+                limite_turnos = 0
+                while respuesta_ia.tool_calls and limite_turnos < 5:
                     for call in respuesta_ia.tool_calls:
                         nombre_funcion = call["name"]
                         argumentos = call["args"]
                         
-                        funcion_real = diccionario_herramientas[nombre_funcion]
-                        resultado_herramienta = funcion_real.invoke(argumentos)
-                        
+                        # Ejecutamos la herramienta
+                        funcion_real = diccionario_herramientas.get(nombre_funcion)
+                        if funcion_real:
+                            resultado_herramienta = funcion_real.invoke(argumentos)
+                        else:
+                            resultado_herramienta = "Error: Herramienta no encontrada."
+                            
+                        # Guardamos el resultado en la memoria
                         mensajes_conversacion.append(
                             ToolMessage(content=str(resultado_herramienta), tool_call_id=call["id"])
                         )
                     
-                    respuesta_final_ia = llm_con_herramientas.invoke(mensajes_conversacion)
-                    texto_final = limpiar_texto_agente(respuesta_final_ia.content)
-                else:
-                    texto_final = limpiar_texto_agente(respuesta_ia.content)
+                    # Le devolvemos los datos a la IA y le dejamos decidir si ya terminó o si necesita buscar más
+                    respuesta_ia = llm_con_herramientas.invoke(mensajes_conversacion)
+                    mensajes_conversacion.append(respuesta_ia)
+                    limite_turnos += 1
+                
+                # Cuando el bucle termina (ya no necesita usar herramientas), sacamos el texto final
+                texto_final = limpiar_texto_agente(respuesta_ia.content)
 
-                # Evitar que se muestre vacío si hubo un error extraño
                 if not texto_final.strip():
-                    texto_final = "Lo siento, tuve un problema interno al procesar los datos de la base de datos."
+                    texto_final = "No pude encontrar la información o la consulta fue demasiado compleja. ¿Puedes preguntar por menos piezas a la vez?"
 
                 st.chat_message("assistant").markdown(texto_final)
                 st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
