@@ -113,6 +113,16 @@ def preparar_catalogo(api_key):
 # ==========================================
 if api_key:
     try:
+        # --- NUEVO 1: LEEMOS EL ESQUEMA DE LA BASE DE DATOS ---
+        # Así la IA sabrá exactamente qué columnas existen para no equivocarse
+        conexion = sqlite3.connect("inventario.db")
+        cursor = conexion.cursor()
+        cursor.execute("PRAGMA table_info(repuestos);")
+        columnas_db = [fila[1] for fila in cursor.fetchall()]
+        conexion.close()
+        esquema_columnas = ", ".join(columnas_db)
+        # ------------------------------------------------------
+
         base_datos = preparar_catalogo(api_key)
         if "mensajes" not in st.session_state: st.session_state.mensajes = []
         for msg in st.session_state.mensajes:
@@ -123,71 +133,73 @@ if api_key:
         if pregunta:
             st.chat_message("user").markdown(pregunta)
             
-            # 1. Buscar en PDF (El PDF sigue usando RAG clásico)
             info_pdf = ""
             if base_datos:
                 docs = base_datos.similarity_search(pregunta, k=3)
                 info_pdf = "\n".join([d.page_content for d in docs])
 
-            # 2. Configurar el Agente
             llm_base = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0, max_retries=3)
             llm_con_herramientas = llm_base.bind_tools(lista_herramientas)
 
-            # 3. Preparar historial
             historial_texto = ""
             for m in st.session_state.mensajes[-4:]:
                 rol = "Cliente" if m["rol"] == "user" else "Asistente"
                 historial_texto += f"{rol}: {m['contenido']}\n"
 
-            # 4. El Prompt de Sistema
+            # --- NUEVO 2: ACTUALIZAMOS EL PROMPT CON EL ESQUEMA ---
             instrucciones = f"""Eres un experto en repuestos. 
             DATOS TÉCNICOS (PDF): {info_pdf}
             HISTORIAL: {historial_texto}
 
             REGLAS:
             1. Para saber si hay repuestos, DEBES usar la herramienta 'consultar_inventario_sql'.
-            2. La base de datos tiene una tabla llamada 'repuestos'. 
-            3. Haz consultas seguras (ej: SELECT * FROM repuestos WHERE descripcion LIKE '%bujia%').
-            4. Cuando tengas los datos de la base de datos, preséntalos en una tabla Markdown bonita.
-            5. Si tras usar SQL no hay resultados, usa la herramienta 'registrar_pieza_faltante'.
+            2. La base de datos tiene una tabla llamada 'repuestos' con las siguientes COLUMNAS EXACTAS: {esquema_columnas}.
+            3. Analiza las columnas disponibles y construye consultas SQL válidas para SQLite.
+            4. Cuando la herramienta te devuelva los datos, redacta una respuesta clara y usa una tabla Markdown para mostrar los repuestos.
+            5. Si no hay stock, usa la herramienta 'registrar_pieza_faltante'.
             """
 
-            with st.spinner("Procesando..."):
-                # --- EL CICLO DE RAZONAMIENTO DEL AGENTE ---
+            with st.spinner("Procesando consulta en Base de Datos..."):
                 mensajes_conversacion = [
                     SystemMessage(content=instrucciones),
                     HumanMessage(content=pregunta)
                 ]
                 
-                # Paso 1: La IA piensa y decide qué herramienta usar
                 respuesta_ia = llm_con_herramientas.invoke(mensajes_conversacion)
                 mensajes_conversacion.append(respuesta_ia)
                 
-                # Paso 2: Ejecutamos las herramientas que la IA pidió
+                # --- NUEVO 3: FUNCIÓN DE LIMPIEZA UNIVERSAL ---
+                def limpiar_texto_agente(contenido):
+                    if isinstance(contenido, str): return contenido
+                    if isinstance(contenido, list):
+                        return "".join([b["text"] for b in contenido if isinstance(b, dict) and "text" in b])
+                    return str(contenido)
+                # ----------------------------------------------
+
                 if respuesta_ia.tool_calls:
                     for call in respuesta_ia.tool_calls:
                         nombre_funcion = call["name"]
                         argumentos = call["args"]
                         
-                        # Ejecutar la función Python real
                         funcion_real = diccionario_herramientas[nombre_funcion]
                         resultado_herramienta = funcion_real.invoke(argumentos)
                         
-                        # Le pasamos el resultado de vuelta a la IA
                         mensajes_conversacion.append(
                             ToolMessage(content=str(resultado_herramienta), tool_call_id=call["id"])
                         )
                     
-                    # Paso 3: La IA lee los datos de la base de datos y redacta la respuesta final
                     respuesta_final_ia = llm_con_herramientas.invoke(mensajes_conversacion)
-                    texto_final = respuesta_final_ia.content
+                    texto_final = limpiar_texto_agente(respuesta_final_ia.content)
                 else:
-                    texto_final = respuesta_ia.content
+                    texto_final = limpiar_texto_agente(respuesta_ia.content)
 
-                # Mostramos y guardamos
+                # Evitar que se muestre vacío si hubo un error extraño
+                if not texto_final.strip():
+                    texto_final = "Lo siento, tuve un problema interno al procesar los datos de la base de datos."
+
                 st.chat_message("assistant").markdown(texto_final)
                 st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
                 st.session_state.mensajes.append({"rol": "assistant", "contenido": texto_final})
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error general: {e}")
