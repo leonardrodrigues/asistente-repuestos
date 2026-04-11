@@ -152,16 +152,16 @@ if api_key:
             HISTORIAL: {historial_texto}
 
             REGLAS CRÍTICAS PARA BUSCAR Y RESPONDER:
-            1. HERRAMIENTA SQL: Para saber el stock, DEBES usar 'consultar_inventario_sql'. La tabla es 'repuestos' con las columnas: {esquema_columnas}.
-            2. BÚSQUEDAS MÚLTIPLES: Si el cliente pide varios repuestos a la vez (ej: amortiguadores, bases y terminales para Aveo), puedes hacer una consulta SQL amplia con OR (ej: WHERE vehiculo LIKE '%aveo%' AND (descripcion LIKE '%amortiguador%' OR descripcion LIKE '%base%')) o usar la herramienta SQL varias veces, una para cada pieza.
-            3. REGLA DE SIMPLIFICACIÓN: Si la base de datos te devuelve múltiples resultados (varias marcas o códigos) para la misma pieza, SELECCIONA SOLO UNO (preferiblemente el que tenga existencia mayor a 0) para mostrar en tu respuesta. El objetivo es dar una guía rápida, no todo el catálogo.
-            4. FORMATO DE TABLA ESTRICTO: Cuando el cliente pida repuestos, tu respuesta final DEBE ser una única tabla Markdown con este formato y columnas exactas:
+            1. HERRAMIENTA SQL: Para buscar repuestos, DEBES usar 'consultar_inventario_sql'. La tabla es 'repuestos' con las columnas exactas: {esquema_columnas}.
+            2. BÚSQUEDAS MÚLTIPLES: Si el cliente pide varios repuestos, usa la herramienta SQL para cada uno. Puedes hacer varias búsquedas seguidas antes de responder.
+            3. REGLA DE SIMPLIFICACIÓN: Si hay múltiples resultados para la misma pieza, SELECCIONA SOLO UNO (priorizando el que tenga mayor existencia/cantidad).
+            4. FORMATO DE TABLA ESTRICTO: Tu respuesta final DEBE ser una única tabla Markdown con este formato exacto:
             
             | Repuesto | Aplica a | Código | Marca | Existencia |
             | :--- | :--- | :--- | :--- | :--- |
-            | (Nombre simplificado de la pieza) | (Vehículo) | (Código de BD) | (Marca de BD) | (Cantidad de BD) |
+            | (Nombre simple) | (Vehículo) | (codigo_producto) | (marca) | (Cantidad numérica) |
 
-            5. PIEZAS FALTANTES: Si una pieza de la lista no aparece en la BD, usa la herramienta 'registrar_pieza_faltante' para esa pieza específica. Luego, añádela a la tabla poniendo "0" en existencia y "No disponible" en Código/Marca.
+            5. PIEZAS FALTANTES: Si una pieza no aparece en la BD (o su existencia es 0), usa la herramienta 'registrar_pieza_faltante'. Luego, añádela a la tabla poniendo "0" en existencia y "No disponible" en Código/Marca.
             """
 
             with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
