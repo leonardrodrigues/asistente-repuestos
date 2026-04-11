@@ -30,6 +30,9 @@ if not api_key:
 else:
     st.sidebar.success("✅ API Key cargada desde Secrets")
 
+# --- ESPACIO RESERVADO PARA EL PANEL DE PEDIDOS ---
+espacio_pedidos = st.sidebar.empty()
+
 PERSIST_DIRECTORY = "db_catalogo_solo"
 
 # ==========================================
@@ -152,16 +155,20 @@ if api_key:
             HISTORIAL: {historial_texto}
 
             REGLAS CRÍTICAS PARA BUSCAR Y RESPONDER:
-            1. HERRAMIENTA SQL: Para buscar repuestos, DEBES usar 'consultar_inventario_sql'. La tabla es 'repuestos' con las columnas exactas: {esquema_columnas}.
-            2. BÚSQUEDAS MÚLTIPLES: Si el cliente pide varios repuestos, usa la herramienta SQL para cada uno. Puedes hacer varias búsquedas seguidas antes de responder.
-            3. REGLA DE SIMPLIFICACIÓN: Si hay múltiples resultados para la misma pieza, SELECCIONA SOLO UNO (priorizando el que tenga mayor existencia/cantidad).
-            4. FORMATO DE TABLA ESTRICTO: Tu respuesta final DEBE ser una única tabla Markdown con este formato exacto:
+            1. HERRAMIENTA SQL: Usa 'consultar_inventario_sql'. Columnas exactas: {esquema_columnas}.
+            2. TOLERANCIA DE BÚSQUEDA (¡MUY IMPORTANTE!):
+               - NUNCA busques en plural. Si el cliente pide "amortiguadores", tu SQL debe decir LIKE '%amortiguador%'. Si pide "bases", usa '%base%'.
+               - Usa raíces de palabras para evitar errores (ej: busca '%rolin%' para abarcar rolinera o rolineras).
+               - Conoce los sinónimos del rubro: balatas = pastillas, rolinera = rodamiento = mozo. Traduce la petición del cliente al lenguaje técnico antes de hacer el SQL.
+            3. BÚSQUEDAS MÚLTIPLES: Haz una búsqueda SQL separada para cada repuesto. Toma tu tiempo.
+            4. REGLA DE SIMPLIFICACIÓN: Selecciona SOLO UN resultado por repuesto (el de mayor existencia).
+            5. FORMATO DE TABLA ESTRICTO: Tu respuesta final DEBE ser una tabla Markdown:
             
             | Repuesto | Aplica a | Código | Marca | Existencia |
             | :--- | :--- | :--- | :--- | :--- |
-            | (Nombre simple) | (Vehículo) | (codigo_producto) | (marca) | (Cantidad numérica) |
+            | (Nombre simple) | (Vehículo) | (codigo_producto) | (marca) | (Cantidad) |
 
-            5. PIEZAS FALTANTES: Si una pieza no aparece en la BD (o su existencia es 0), usa la herramienta 'registrar_pieza_faltante'. Luego, añádela a la tabla poniendo "0" en existencia y "No disponible" en Código/Marca.
+            6. PIEZAS FALTANTES: Si tras buscar usando singulares/sinónimos no hay resultados o la existencia es 0, usa OBLIGATORIAMENTE la herramienta 'registrar_pieza_faltante'. Añádela a la tabla final con "0" y "No disponible".
             """
 
             with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
@@ -217,3 +224,19 @@ if api_key:
 
     except Exception as e:
         st.error(f"Error general: {e}")
+
+# --- RELLENAR EL PANEL AL FINAL DE TODO ---
+with espacio_pedidos.container():
+    with st.expander("📦 Ver Pedidos Pendientes"):
+        if os.path.exists("pedidos_pendientes.txt"):
+            with open("pedidos_pendientes.txt", "r", encoding="utf-8") as f:
+                contenido = f.read()
+                if contenido.strip():
+                    st.text(contenido)
+                    if st.button("Borrar lista de pedidos"):
+                        os.remove("pedidos_pendientes.txt")
+                        st.rerun()
+                else:
+                    st.info("Aún no hay piezas faltantes registradas.")
+        else:
+            st.info("Aún no hay piezas faltantes registradas.")
