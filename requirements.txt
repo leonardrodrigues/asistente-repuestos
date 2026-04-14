@@ -7,3 +7,4 @@ pypdf
 langchain-text-splitters
 protobuf<=3.20.3
 pysqlite3-binary
+gspread==6.0.0
