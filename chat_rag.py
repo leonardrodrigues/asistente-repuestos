@@ -74,30 +74,30 @@ def registrar_pieza_faltante(pieza: str, vehiculo: str) -> str:
     Útil EXCLUSIVAMENTE cuando buscas un repuesto con la herramienta SQL y NO HAY RESULTADOS.
     Guarda la solicitud para el dueño del negocio en Google Sheets.
     """
+    # 1. ESTO APARECERÁ EN PANTALLA SI EL BOT DE VERDAD USA LA HERRAMIENTA
+    st.toast(f"🤖 Conectando a Google Sheets para pedir: {pieza}...", icon="🔄") 
+    
     try:
-        # 1. Definir los permisos que necesita el bot
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        
-        # 2. Cargar las credenciales desde los secrets de Streamlit
         cred_dict = dict(st.secrets["gcp_service_account"])
         credentials = Credentials.from_service_account_info(cred_dict, scopes=scopes)
-        
-        # 3. Conectar a Google
         client = gspread.authorize(credentials)
-        
-        # 4. Abrir el documento (Asegúrate de que el nombre sea EXACTO)
         sheet = client.open("Pedidos Repuestos IA").sheet1
         
-        # 5. Insertar la fila
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
         sheet.append_row([fecha, pieza, vehiculo])
+        
+        # 2. ESTO APARECERÁ SI GOOGLE ACEPTA EL REGISTRO
+        st.toast(f"✅ ¡{pieza} registrada en el Excel con éxito!", icon="✅")
         
         return f"Registro exitoso en la nube. La pieza '{pieza}' ha sido notificada al administrador."
         
     except Exception as e:
+        # 3. ESTO NOS MOSTRARÁ EL ERROR REAL DE GOOGLE SI ALGO FALLA (ej. permisos)
+        st.error(f"Error técnico en Google Sheets: {e}") 
         return f"Error al guardar en la nube: {e}. Por favor, avisa al administrador."
 
 # Agrupamos las herramientas
@@ -191,10 +191,10 @@ if api_key:
             | :--- | :--- | :--- | :--- | :--- |
             | (Nombre) | (Vehículo) | (codigo) | (marca) | (Cantidad) |
 
-            6. PIEZAS FALTANTES (¡ACCIÓN INMEDIATA!): Si tras buscar en SQL no hay resultados o la existencia es 0, DEBES ejecutar INMEDIATAMENTE la herramienta 'registrar_pieza_faltante'. 
-               - NO PIDAS PERMISO al cliente para registrarla.
-               - Usa los datos que el cliente ya mencionó (ej. pieza="brazo loco", vehiculo="Maverick").
-               - En tu respuesta final, dile al cliente que la pieza no estaba disponible pero que YA FUE REGISTRADA en el sistema de pedidos, y muestra la tabla con "0" de existencia.
+            6. PIEZAS FALTANTES (¡ACCIÓN INMEDIATA!): Si tras buscar en SQL la existencia es 0 o no hay datos, DEBES ejecutar INMEDIATAMENTE la herramienta 'registrar_pieza_faltante'.
+               - PROHIBIDO decir que registraste la pieza sin antes haber ejecutado la herramienta y recibido el mensaje de "Registro exitoso".
+               - Usa los datos mencionados (ej. pieza="brazo loco", vehiculo="Maverick").
+               - Solo cuando la herramienta confirme el éxito, muestra la tabla con "0" de existencia e informa al cliente.
             """
 
             with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
