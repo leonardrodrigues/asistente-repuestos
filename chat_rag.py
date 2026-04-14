@@ -189,9 +189,12 @@ if api_key:
             
             | Repuesto | Aplica a | Código | Marca | Existencia |
             | :--- | :--- | :--- | :--- | :--- |
-            | (Nombre simple) | (Vehículo) | (codigo_producto) | (marca) | (Cantidad) |
+            | (Nombre) | (Vehículo) | (codigo) | (marca) | (Cantidad) |
 
-            6. PIEZAS FALTANTES: Si tras buscar usando singulares/sinónimos no hay resultados o la existencia es 0, usa OBLIGATORIAMENTE la herramienta 'registrar_pieza_faltante'. Añádela a la tabla final con "0" y "No disponible".
+            6. PIEZAS FALTANTES (¡ACCIÓN INMEDIATA!): Si tras buscar en SQL no hay resultados o la existencia es 0, DEBES ejecutar INMEDIATAMENTE la herramienta 'registrar_pieza_faltante'. 
+               - NO PIDAS PERMISO al cliente para registrarla.
+               - Usa los datos que el cliente ya mencionó (ej. pieza="brazo loco", vehiculo="Maverick").
+               - En tu respuesta final, dile al cliente que la pieza no estaba disponible pero que YA FUE REGISTRADA en el sistema de pedidos, y muestra la tabla con "0" de existencia.
             """
 
             with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
