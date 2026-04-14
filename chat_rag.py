@@ -5,6 +5,8 @@ import sqlite3
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- TRUCO PARA CHROMA EN STREAMLIT CLOUD ---
 __import__('pysqlite3')
@@ -70,12 +72,33 @@ def consultar_inventario_sql(consulta_sql: str) -> str:
 def registrar_pieza_faltante(pieza: str, vehiculo: str) -> str:
     """
     Útil EXCLUSIVAMENTE cuando buscas un repuesto con la herramienta SQL y NO HAY RESULTADOS.
-    Guarda la solicitud para el dueño del negocio.
+    Guarda la solicitud para el dueño del negocio en Google Sheets.
     """
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with open("pedidos_pendientes.txt", "a", encoding="utf-8") as f:
-        f.write(f"[{fecha}] Solicitado: {pieza} - Para: {vehiculo}\n")
-    return "Registro exitoso en pedidos pendientes."
+    try:
+        # 1. Definir los permisos que necesita el bot
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # 2. Cargar las credenciales desde los secrets de Streamlit
+        cred_dict = dict(st.secrets["gcp_service_account"])
+        credentials = Credentials.from_service_account_info(cred_dict, scopes=scopes)
+        
+        # 3. Conectar a Google
+        client = gspread.authorize(credentials)
+        
+        # 4. Abrir el documento (Asegúrate de que el nombre sea EXACTO)
+        sheet = client.open("Pedidos Repuestos IA").sheet1
+        
+        # 5. Insertar la fila
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+        sheet.append_row([fecha, pieza, vehiculo])
+        
+        return f"Registro exitoso en la nube. La pieza '{pieza}' ha sido notificada al administrador."
+        
+    except Exception as e:
+        return f"Error al guardar en la nube: {e}. Por favor, avisa al administrador."
 
 # Agrupamos las herramientas
 lista_herramientas = [consultar_inventario_sql, registrar_pieza_faltante]
@@ -224,19 +247,3 @@ if api_key:
 
     except Exception as e:
         st.error(f"Error general: {e}")
-
-# --- RELLENAR EL PANEL AL FINAL DE TODO ---
-with espacio_pedidos.container():
-    with st.expander("📦 Ver Pedidos Pendientes"):
-        if os.path.exists("pedidos_pendientes.txt"):
-            with open("pedidos_pendientes.txt", "r", encoding="utf-8") as f:
-                contenido = f.read()
-                if contenido.strip():
-                    st.text(contenido)
-                    if st.button("Borrar lista de pedidos"):
-                        os.remove("pedidos_pendientes.txt")
-                        st.rerun()
-                else:
-                    st.info("Aún no hay piezas faltantes registradas.")
-        else:
-            st.info("Aún no hay piezas faltantes registradas.")
