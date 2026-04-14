@@ -191,10 +191,11 @@ if api_key:
             | :--- | :--- | :--- | :--- | :--- |
             | (Nombre) | (Vehículo) | (codigo) | (marca) | (Cantidad) |
 
-            6. PIEZAS FALTANTES (¡ACCIÓN INMEDIATA!): Si tras buscar en SQL la existencia es 0 o no hay datos, DEBES ejecutar INMEDIATAMENTE la herramienta 'registrar_pieza_faltante'.
-               - PROHIBIDO decir que registraste la pieza sin antes haber ejecutado la herramienta y recibido el mensaje de "Registro exitoso".
-               - Usa los datos mencionados (ej. pieza="brazo loco", vehiculo="Maverick").
-               - Solo cuando la herramienta confirme el éxito, muestra la tabla con "0" de existencia e informa al cliente.
+            6. PIEZAS FALTANTES (SECUENCIA OBLIGATORIA): 
+               Si la búsqueda SQL no devuelve resultados o la existencia es 0, DEBES seguir estos pasos en orden:
+               - PASO 1: Ejecuta la herramienta 'registrar_pieza_faltante' usando los datos del cliente (ej. pieza="brazo loco", vehiculo="Maverick").
+               - PASO 2: Lee el resultado que te devuelve la herramienta.
+               - PASO 3: Redacta tu respuesta final al cliente. Dile amablemente que no hay stock, confirma que la pieza ya fue registrada en la nube gracias a la herramienta, y muestra la tabla con existencia "0".
             """
 
             with st.spinner("Procesando consulta en Base de Datos (puede tardar unos segundos)..."):
