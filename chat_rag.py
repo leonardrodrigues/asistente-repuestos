@@ -164,7 +164,7 @@ if api_key:
                 docs = base_datos.similarity_search(pregunta, k=3)
                 info_pdf = "\n".join([d.page_content for d in docs])
 
-            llm_base = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0, max_retries=3)
+            llm_base = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0, max_retries=3)
             llm_con_herramientas = llm_base.bind_tools(lista_herramientas)
 
             historial_texto = ""
